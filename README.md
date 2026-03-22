@@ -1,5 +1,8 @@
 # Session Bridge
 
+[![npm version](https://img.shields.io/npm/v/session-bridge-skill)](https://www.npmjs.com/package/session-bridge-skill)
+[![GitHub Repository](https://img.shields.io/badge/github-joonseong11%2Fsession--bridge--skill-181717?logo=github)](https://github.com/joonseong11/session-bridge-skill)
+
 `session-bridge` is a portable skill bundle for browsing saved Codex and Claude sessions, previewing a selected conversation, and importing a snapshot context packet without using live resume.
 
 It installs:
@@ -109,7 +112,7 @@ That gives you:
 3. Teammates run:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/joonseong11/session-bridge-skill.git
 cd session-bridge-skill
 bash install.sh
 ```
