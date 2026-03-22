@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Portable CLI and skill bundle for browsing saved Codex and Claude sessions and importing snapshot context without live resume.",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joonseong11/session-bridge-skill.git"
+  },
+  "homepage": "https://github.com/joonseong11/session-bridge-skill",
+  "bugs": {
+    "url": "https://github.com/joonseong11/session-bridge-skill/issues"
+  },
   "bin": {
     "session-bridge": "./bin/session-bridge.js"
   },
