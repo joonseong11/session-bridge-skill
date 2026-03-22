@@ -51,6 +51,25 @@ After installation:
 - Codex can use the global `session-bridge` skill
 - Claude can use the global `session-bridge` skill or `/session-bridge` command
 
+## Version Sync
+
+`session-bridge` skill version is defined in:
+
+```text
+skill/SKILL.md
+```
+
+The npm package version is synced from that value.
+
+Useful commands:
+
+```bash
+npm run version:check
+npm run version:sync
+```
+
+`npm pack` and `npm publish` also run the sync step automatically through `prepack`.
+
 ## Typical Use
 
 Codex skill:
@@ -75,19 +94,13 @@ python3 ~/.agents/skills/session-bridge/scripts/session_bridge.py pack 3 --sourc
 
 ## Distribution Recommendation
 
-The simplest distribution path is a GitHub repository containing this bundle.
+Recommended publishing shape:
+- GitHub repository as the source of truth
+- npm package as the install channel
 
-Recommended:
-- Publish this folder as a repo
-- Tell teammates to clone it and run `bash install.sh`
-
-Not recommended as the first step:
-- npm package
-
-Reason:
-- This is a skill bundle plus a Python script, not a Node library
-- GitHub + install script is simpler and easier to audit
-- npm only becomes useful if you specifically want `npx`-style installation
+That gives you:
+- normal code review and issue tracking in GitHub
+- easy `npx` and `npm install -g` installation for coworkers
 
 ## Suggested GitHub Flow
 
@@ -101,7 +114,7 @@ cd session-bridge-skill
 bash install.sh
 ```
 
-If later you want a one-command installer, add a release asset or a curlable install script. Add npm only if your team already distributes internal tooling that way.
+If you want a git-only path, teammates can still clone the repo and run `bash install.sh`.
 
 ## Internal Team Distribution
 
@@ -120,14 +133,6 @@ npm is appropriate when you want one-command installation for coworkers:
 ```bash
 npx session-bridge-skill install
 ```
-
-Recommended publishing shape:
-- GitHub repo as source of truth
-- npm package as install channel
-
-That gives you:
-- normal code review and issue tracking in GitHub
-- easy install and updates through npm
 
 ## Publish Notes
 

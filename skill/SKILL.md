@@ -1,5 +1,6 @@
 ---
 name: session-bridge
+version: 0.1.0
 description: Browse saved Codex and Claude conversations, preview a selected session, and import a snapshot of that context into the current session without using live resume. Use when the user wants to continue from another Codex or Claude conversation, inspect old session context, or ask a new question on top of a saved conversation.
 argument-hint: "[list|preview|pack] [selector|query]"
 ---
