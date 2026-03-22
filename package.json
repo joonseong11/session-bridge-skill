@@ -1,0 +1,26 @@
+{
+  "name": "session-bridge-skill",
+  "version": "0.1.0",
+  "description": "Portable CLI and skill bundle for browsing saved Codex and Claude sessions and importing snapshot context without live resume.",
+  "license": "UNLICENSED",
+  "bin": {
+    "session-bridge": "./bin/session-bridge.js"
+  },
+  "files": [
+    "bin",
+    "claude",
+    "skill",
+    "install.sh",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "codex",
+    "claude",
+    "skills",
+    "session",
+    "cli"
+  ]
+}

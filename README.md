@@ -30,6 +30,27 @@ This installs the skill globally for both tools:
 - Claude: `~/.claude/skills/session-bridge`
 - Claude command: `~/.claude/commands/session-bridge.md`
 
+## npm / npx Install
+
+If you publish this package, the intended entrypoint is a CLI, not a library import.
+
+Recommended:
+
+```bash
+npx session-bridge-skill install
+```
+
+Or global install:
+
+```bash
+npm install -g session-bridge-skill
+session-bridge install
+```
+
+After installation:
+- Codex can use the global `session-bridge` skill
+- Claude can use the global `session-bridge` skill or `/session-bridge` command
+
 ## Typical Use
 
 Codex skill:
@@ -92,13 +113,26 @@ For coworkers inside the company, start with one of these:
 
 Private GitHub is usually enough. It keeps version history simple, code review straightforward, and installation easy.
 
-## Why Not npm First
+## npm Distribution
 
-Do not start with npm unless you specifically need `npx` or semver-based package distribution.
+npm is appropriate when you want one-command installation for coworkers:
 
-This project is:
-- a portable skill bundle
-- a Python utility script
-- a shell installer that copies files into Codex and Claude global directories
+```bash
+npx session-bridge-skill install
+```
 
-That maps better to a git repository than to a Node package.
+Recommended publishing shape:
+- GitHub repo as source of truth
+- npm package as install channel
+
+That gives you:
+- normal code review and issue tracking in GitHub
+- easy install and updates through npm
+
+## Publish Notes
+
+Before publishing to npm, decide:
+- public npm package vs private registry
+- final package name, for example `session-bridge-skill` or `@company/session-bridge`
+
+For a company rollout, `@company/session-bridge` on a private registry or GitHub Packages is usually the cleanest option.
