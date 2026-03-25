@@ -1,35 +1,55 @@
 ---
-description: 저장된 Codex/Claude 세션 목록을 보고 선택한 세션의 맥락을 현재 대화로 가져온다. live resume는 하지 않는다.
+description: 저장된 Codex/Claude 세션을 탐색하거나, 현재 Claude 세션을 새 터미널 대상으로 fork 한다.
 ---
 
 # Session Bridge
 
-Use the global `session-bridge` skill and script to work from saved session logs.
+Use the global `session-bridge` skill and CLI to work from saved logs or to branch the current live Claude session.
 
-## Flow
+## Saved Session Flow
 
-1. List available sessions:
+1. List sessions:
 
 ```bash
 python3 ~/.claude/skills/session-bridge/scripts/session_bridge.py list --source all --limit 12
 ```
 
-2. If the user wants to inspect one session first:
+2. Preview one session:
 
 ```bash
 python3 ~/.claude/skills/session-bridge/scripts/session_bridge.py preview <selector> --source all --messages 8
 ```
 
-3. If the user wants to continue from that context without live resume:
+3. Build a snapshot packet:
 
 ```bash
-python3 ~/.claude/skills/session-bridge/scripts/session_bridge.py pack <selector> --source all --messages 8
+python3 ~/.claude/skills/session-bridge/scripts/session_bridge.py pack <selector> --source all --messages 12
 ```
 
-4. Read the generated markdown packet and treat it as imported snapshot context for the next user request.
+4. Read the generated markdown packet and use it as imported snapshot context.
 
-## Rules
+## Current Claude Session Branching
 
-- Do not use live resume.
-- Do not claim that process state or hidden reasoning was restored.
-- Re-check the live repo before making code claims because imported context can be stale.
+To branch the current live Claude session:
+
+```bash
+session-bridge fork-current --provider claude
+```
+
+To override the terminal target for this run:
+
+```bash
+session-bridge fork-current --provider claude --terminal cmux
+```
+
+If the user only wants the raw command:
+
+```bash
+session-bridge fork-current --provider claude --terminal command
+```
+
+The CLI uses `CLAUDE_SESSION_ID` when available and launches:
+
+```text
+claude --resume <session-id> --fork-session
+```

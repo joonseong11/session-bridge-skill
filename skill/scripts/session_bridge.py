@@ -17,6 +17,9 @@ CODEX_ROOT = HOME / ".codex" / "sessions"
 CLAUDE_ROOT = HOME / ".claude" / "projects"
 DEFAULT_PREVIEW_MESSAGES = 8
 MAX_TEXT_CHARS = 600
+CODEX_SESSION_ID_PATTERN = re.compile(
+    r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+)
 
 
 @dataclass
@@ -24,6 +27,15 @@ class Message:
     role: str
     text: str
     timestamp: str | None = None
+
+
+@dataclass(frozen=True)
+class SessionFile:
+    source: str
+    session_id: str
+    path: Path
+    updated_at: str
+    sort_timestamp: float
 
 
 @dataclass
@@ -105,20 +117,19 @@ def main() -> int:
     args = parse_args()
 
     if args.command == "list":
-        sessions = load_summaries(args.source, args.query)
+        requested_limit = None if args.limit == 0 else args.limit
+        sessions = load_summaries(args.source, args.query, limit=requested_limit)
         print_list(sessions, limit=args.limit, as_json=args.json)
         return 0
 
     if args.command == "preview":
-        summary_list = load_summaries(args.source, args.query)
-        summary = resolve_selector(summary_list, args.selector)
+        summary = resolve_summary(args.source, args.query, args.selector)
         record = load_record(summary)
         print_preview(record, args.messages, as_json=args.json)
         return 0
 
     if args.command == "pack":
-        summary_list = load_summaries(args.source, args.query)
-        summary = resolve_selector(summary_list, args.selector)
+        summary = resolve_summary(args.source, args.query, args.selector)
         record = load_record(summary)
         output_path = write_context_packet(
             record, message_limit=args.messages, output_path=args.output
@@ -129,43 +140,152 @@ def main() -> int:
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
-def load_summaries(source: str, query: str) -> list[SessionSummary]:
-    summaries: list[SessionSummary] = []
-
-    if source in {"all", "codex"}:
-        for path in CODEX_ROOT.rglob("*.jsonl"):
-            summary = scan_codex_summary(path)
-            if summary is not None:
-                summaries.append(summary)
-
-    if source in {"all", "claude"}:
-        for path in CLAUDE_ROOT.rglob("*.jsonl"):
-            if "/subagents/" in path.as_posix():
-                continue
-            summary = scan_claude_summary(path)
-            if summary is not None:
-                summaries.append(summary)
-
+def load_summaries(source: str, query: str, limit: int | None = None) -> list[SessionSummary]:
+    candidates = discover_session_files(source)
     query_lower = query.lower().strip()
+
     if query_lower:
-        summaries = [
+        summaries = hydrate_candidates(candidates)
+        filtered = [
             summary
             for summary in summaries
             if query_lower in searchable_text(summary).lower()
         ]
+        filtered.sort(key=sort_key, reverse=True)
+        return filtered if limit is None else filtered[:limit]
 
-    summaries.sort(key=sort_key, reverse=True)
+    if limit is None:
+        target_candidates = candidates
+    else:
+        target_candidates = candidates[:limit]
+    return hydrate_candidates(target_candidates)
+
+
+def resolve_summary(source: str, query: str, selector: str) -> SessionSummary:
+    query_lower = query.lower().strip()
+    if query_lower:
+        summaries = load_summaries(source, query, limit=None)
+        return resolve_selector(summaries, selector)
+
+    candidates = discover_session_files(source)
+    if not candidates:
+        raise SystemExit("No sessions matched.")
+
+    if selector.isdigit():
+        index = int(selector)
+        if index < 1 or index > len(candidates):
+            raise SystemExit(
+                f"Index {index} is out of range. Available rows: 1-{len(candidates)}."
+            )
+        summary = hydrate_summary(candidates[index - 1])
+        if summary is None:
+            raise SystemExit(f"Failed to read session file: {candidates[index - 1].path}")
+        return summary
+
+    matches = [
+        candidate
+        for candidate in candidates
+        if candidate.session_id.startswith(selector) or selector in str(candidate.path)
+    ]
+    if not matches:
+        raise SystemExit(f"No session matched selector: {selector}")
+    if len(matches) > 1:
+        raise SystemExit(format_candidate_matches(matches[:10]))
+
+    summary = hydrate_summary(matches[0])
+    if summary is None:
+        raise SystemExit(f"Failed to read session file: {matches[0].path}")
+    return summary
+
+
+def discover_session_files(source: str) -> list[SessionFile]:
+    candidates: list[SessionFile] = []
+
+    if source in {"all", "codex"}:
+        candidates.extend(discover_codex_files())
+
+    if source in {"all", "claude"}:
+        candidates.extend(discover_claude_files())
+
+    candidates.sort(key=sort_discovered_key, reverse=True)
+    return candidates
+
+
+def discover_codex_files() -> list[SessionFile]:
+    if not CODEX_ROOT.exists():
+        return []
+
+    candidates: list[SessionFile] = []
+    for path in CODEX_ROOT.rglob("*.jsonl"):
+        candidates.append(
+            build_session_file(
+                source="codex",
+                path=path,
+                session_id=discover_codex_session_id(path),
+            )
+        )
+    return candidates
+
+
+def discover_claude_files() -> list[SessionFile]:
+    if not CLAUDE_ROOT.exists():
+        return []
+
+    candidates: list[SessionFile] = []
+    for path in CLAUDE_ROOT.rglob("*.jsonl"):
+        path_text = path.as_posix()
+        if "/subagents/" in path_text or "/observer-sessions/" in path_text:
+            continue
+        candidates.append(
+            build_session_file(source="claude", path=path, session_id=path.stem)
+        )
+    return candidates
+
+
+def build_session_file(source: str, path: Path, session_id: str) -> SessionFile:
+    stat = path.stat()
+    updated_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
+    return SessionFile(
+        source=source,
+        session_id=session_id,
+        path=path,
+        updated_at=updated_at,
+        sort_timestamp=stat.st_mtime,
+    )
+
+
+def discover_codex_session_id(path: Path) -> str:
+    match = CODEX_SESSION_ID_PATTERN.search(path.stem)
+    if match:
+        return match.group(1)
+    return path.stem.replace("rollout-", "")
+
+
+def hydrate_candidates(candidates: Iterable[SessionFile]) -> list[SessionSummary]:
+    summaries: list[SessionSummary] = []
+    for candidate in candidates:
+        summary = hydrate_summary(candidate)
+        if summary is not None:
+            summaries.append(summary)
     return summaries
 
 
-def scan_codex_summary(path: Path) -> SessionSummary | None:
-    session_id = path.stem.replace("rollout-", "")
+def hydrate_summary(candidate: SessionFile) -> SessionSummary | None:
+    if candidate.source == "codex":
+        return scan_codex_summary(candidate)
+    if candidate.source == "claude":
+        return scan_claude_summary(candidate)
+    raise ValueError(f"Unsupported source: {candidate.source}")
+
+
+def scan_codex_summary(candidate: SessionFile) -> SessionSummary | None:
     cwd = None
     started_at = None
     title = None
+    session_id = candidate.session_id
 
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with candidate.path.open("r", encoding="utf-8") as handle:
             for raw_line in handle:
                 line = raw_line.strip()
                 if not line:
@@ -186,31 +306,27 @@ def scan_codex_summary(path: Path) -> SessionSummary | None:
     except (OSError, json.JSONDecodeError):
         return None
 
-    updated_at = file_timestamp(path)
     title = title or "(no textual user prompt found)"
     return SessionSummary(
         source="codex",
         session_id=session_id,
-        path=path,
+        path=candidate.path,
         cwd=cwd,
         started_at=started_at,
-        updated_at=updated_at,
+        updated_at=candidate.updated_at,
         title=title,
         preview=title,
     )
 
 
-def scan_claude_summary(path: Path) -> SessionSummary | None:
-    session_id = path.stem
+def scan_claude_summary(candidate: SessionFile) -> SessionSummary | None:
     cwd = None
     started_at = None
     title = None
-
-    if "/observer-sessions" in path.as_posix():
-        return None
+    session_id = candidate.session_id
 
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with candidate.path.open("r", encoding="utf-8") as handle:
             for raw_line in handle:
                 line = raw_line.strip()
                 if not line:
@@ -227,17 +343,17 @@ def scan_claude_summary(path: Path) -> SessionSummary | None:
     except (OSError, json.JSONDecodeError):
         return None
 
-    updated_at = file_timestamp(path)
-    title = title or "(no textual user prompt found)"
     if cwd and "/observer-sessions" in cwd:
         return None
+
+    title = title or "(no textual user prompt found)"
     return SessionSummary(
         source="claude",
         session_id=session_id,
-        path=path,
+        path=candidate.path,
         cwd=cwd,
         started_at=started_at,
-        updated_at=updated_at,
+        updated_at=candidate.updated_at,
         title=title,
         preview=title,
     )
@@ -290,7 +406,11 @@ def load_codex_messages(path: Path) -> list[Message]:
             if not is_substantive(text):
                 continue
             messages.append(
-                Message(role=role, text=snippet(text, MAX_TEXT_CHARS), timestamp=item.get("timestamp"))
+                Message(
+                    role=role,
+                    text=snippet(text, MAX_TEXT_CHARS),
+                    timestamp=item.get("timestamp"),
+                )
             )
     return dedupe_adjacent(messages)
 
@@ -432,11 +552,7 @@ def print_preview(record: SessionRecord, message_limit: int, as_json: bool) -> N
 def write_context_packet(
     record: SessionRecord, message_limit: int, output_path: str | None
 ) -> Path:
-    destination = (
-        Path(output_path).expanduser()
-        if output_path
-        else default_output_path(record)
-    )
+    destination = Path(output_path).expanduser() if output_path else default_output_path(record)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     user_messages = [message for message in record.messages if message.role == "user"]
@@ -478,9 +594,7 @@ def write_context_packet(
     ]
 
     for message in recent_messages:
-        lines.append(
-            f"### {message.role.title()} {format_time(message.timestamp)}"
-        )
+        lines.append(f"### {message.role.title()} {format_time(message.timestamp)}")
         lines.append("")
         lines.append(message.text)
         lines.append("")
@@ -506,9 +620,7 @@ def default_output_path(record: SessionRecord) -> Path:
     return root / filename
 
 
-def resolve_selector(
-    summaries: list[SessionSummary], selector: str
-) -> SessionSummary:
+def resolve_selector(summaries: list[SessionSummary], selector: str) -> SessionSummary:
     if not summaries:
         raise SystemExit("No sessions matched.")
 
@@ -523,8 +635,7 @@ def resolve_selector(
     matches = [
         summary
         for summary in summaries
-        if summary.session_id.startswith(selector)
-        or selector in str(summary.path)
+        if summary.session_id.startswith(selector) or selector in str(summary.path)
     ]
     if not matches:
         raise SystemExit(f"No session matched selector: {selector}")
@@ -536,6 +647,15 @@ def resolve_selector(
             )
         raise SystemExit("\n".join(lines))
     return matches[0]
+
+
+def format_candidate_matches(matches: list[SessionFile]) -> str:
+    lines = ["Multiple sessions matched. Use an exact id prefix or list index:"]
+    for candidate in matches:
+        lines.append(
+            f"- {candidate.source} {candidate.session_id} {format_time(candidate.updated_at)} {candidate.path}"
+        )
+    return "\n".join(lines)
 
 
 def dedupe_adjacent(messages: list[Message]) -> list[Message]:
@@ -560,6 +680,10 @@ def searchable_text(summary: SessionSummary) -> str:
         ]
         if part
     )
+
+
+def sort_discovered_key(candidate: SessionFile) -> tuple[float, str]:
+    return (candidate.sort_timestamp, candidate.session_id)
 
 
 def sort_key(summary: SessionSummary) -> tuple[str, str]:
@@ -631,11 +755,6 @@ def snippet(text: str, limit: int) -> str:
 
 def sanitize(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", value)
-
-
-def file_timestamp(path: Path) -> str:
-    stat = path.stat()
-    return datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
 
 
 def format_time(timestamp: str | None) -> str:

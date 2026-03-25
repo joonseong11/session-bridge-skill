@@ -1,9 +1,12 @@
 {
   "name": "session-bridge-skill",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Portable CLI and skill bundle for browsing saved Codex and Claude sessions and importing snapshot context without live resume.",
   "license": "UNLICENSED",
   "scripts": {
+    "test": "npm run test:python && npm run test:node",
+    "test:node": "node --test tests/session_bridge_cli.test.js",
+    "test:python": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "version:sync": "node ./scripts/sync-version.js",
     "version:check": "node ./scripts/sync-version.js --check",
     "prepack": "node ./scripts/sync-version.js"
